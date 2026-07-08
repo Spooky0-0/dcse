@@ -23,7 +23,15 @@ impl IdempotencyStore {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, std::io::Error> {
         let db = sled::open(path)?;
         // We use a bloom filter for 10M items, 1% false positive rate
-        let bloom = Bloom::new_for_fp_rate(10_000_000, 0.01).expect("Failed to initialize bloom filter");
+        let mut bloom = Bloom::new_for_fp_rate(10_000_000, 0.01).expect("Failed to initialize bloom filter");
+        
+        for item in db.iter() {
+            if let Ok((key, _)) = item {
+                if let Ok(trade_id) = Uuid::from_slice(&key) {
+                    bloom.set(&trade_id);
+                }
+            }
+        }
         
         Ok(Self { bloom, db })
     }
@@ -112,7 +120,7 @@ impl TradeProcessor {
         }
 
         // 2. Start Coordinator Phase
-        self.coordinator.start_transaction(trade_id)?;
+        self.coordinator.start_transaction(trade_id).await?;
 
         // Move to Prepare Phase
         self.coordinator.transition_state(trade_id, TransactionState::Prepared).await?;

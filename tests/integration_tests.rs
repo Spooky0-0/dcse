@@ -21,7 +21,7 @@ async fn test_chaos_crashed_participant_aborts() {
     let amount = 200;
 
     // Start transaction
-    coordinator.start_transaction(trade_id).unwrap();
+    coordinator.start_transaction(trade_id).await.unwrap();
 
     // Prepare Phase (Simulate only buyer prepares, then system "crashes" before seller prepares)
     let prepare_result = ledger.prepare(trade_id, buyer_id, amount);

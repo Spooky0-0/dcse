@@ -28,7 +28,7 @@ proptest! {
             buyer_ledger.create_account(buyer_id, buyer_balance);
             seller_ledger.create_account(seller_id, seller_balance);
 
-            coordinator.start_transaction(trade_id).unwrap();
+            coordinator.start_transaction(trade_id).await.unwrap();
 
             // Phase 1: Prepare
             let mut prepare_success = true;

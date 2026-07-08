@@ -1,4 +1,5 @@
 [package]
+workspace = "../../OMNIBUS"
 name = "dcse"
 version = "0.1.0"
 edition = "2024"
@@ -14,6 +15,7 @@ sled = "0.34.7"
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["full"] }
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
+dsce-types = { path = "../../dsce-types" }
 
 [dev-dependencies]
 criterion = "0.8.2"

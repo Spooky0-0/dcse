@@ -134,7 +134,7 @@ impl TransactionCoordinator {
         state_map: Arc<DashMap<Uuid, TransactionState>>,
         initial_sequence: u64,
     ) {
-        let mut active_file = wal_file;
+        let active_file = wal_file;
         let mut writer = BufWriter::with_capacity(65536, active_file); // 64KB buffer
         let mut pending_acks: Vec<tokio::sync::oneshot::Sender<Result<(), CoordinatorError>>> = Vec::new();
         let mut bytes_written_since_flush = 0;
@@ -333,12 +333,12 @@ impl TransactionCoordinator {
     /// 
     /// # Errors
     /// Returns a `CoordinatorError` if the transaction cannot be started.
-    pub fn start_transaction(&self, trade_id: Uuid) -> Result<(), CoordinatorError> {
+    pub async fn start_transaction(&self, trade_id: Uuid) -> Result<(), CoordinatorError> {
         if self.pending_transactions.contains_key(&trade_id) {
             return Ok(()); // Idempotency
         }
         
-        self.pending_transactions.insert(trade_id, TransactionState::Pending);
+        self.transition_state(trade_id, TransactionState::Pending).await?;
         Ok(())
     }
 }
