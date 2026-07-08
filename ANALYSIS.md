@@ -38,4 +38,33 @@ State transitions are sent down an `mpsc` queue to a dedicated background `tokio
 1. The memory buffer hits **64KB**. 
 2. A **10ms latency timer** fires (guaranteeing that in periods of low volume, transactions don't hang unconfirmed in memory).
 
-By grouping hundreds of transactions into a single disk I/O call, the DCSE can theoretically process tens of thousands of durable, crash-consistent settlements per second.
+## Tier-1 Production Hardening
+
+While the 2PC engine solves the ledger invariant problem, a production environment requires three additional architectural pillars to guarantee total fault tolerance.
+
+### 1. Recovery Time Objective (RTO): Non-Blocking Active File Rolling
+If a system writes to a WAL indefinitely, an application crash could require hours to replay millions of transactions sequentially from disk. This violates enterprise RTO thresholds.
+
+To cap RTO below 5 seconds, the DCSE implements **Active File Rolling and Snapshotting**:
+- **The Threshold**: Once 1,000,000 transactions are processed, the compaction loop triggers.
+- **Copy-On-Write**: Instead of halting the engine to serialize the live `DashMap`, the coordinator performs a shallow memory copy of the state layout.
+- **Active File Rolling**: The engine performs an atomic filesystem swap, renaming `wal.bin` to `wal.bin.old` and instantly opening a pristine `wal.bin`. This immediately unblocks the hot execution path.
+- **Background Serialization**: A detached I/O thread takes the shallow copy, serializes it via `bincode`, flushes it to disk (`sync_all()`), and deletes the old WAL.
+- **Result**: The compaction stutter is reduced to $\mathcal{O}(1)$ relative to the active thread, ensuring no tail-latency spikes.
+
+### 2. Coordinator High Availability: Raft Consensus Integration
+The flaw in standard 2PC is that the Coordinator is a single point of failure (SPOF). If the Coordinator crashes mid-transaction, ledgers may hold locked funds indefinitely.
+
+To solve this, the DCSE Coordinator state can be distributed using **Raft Consensus**:
+- The Coordinator operates as the Raft Leader.
+- When generating a `WalEntry`, instead of immediately issuing a local `fsync`, the Leader broadcasts the entry to a cluster of Raft Follower nodes.
+- Only once a **Quorum** of followers (e.g., 2 out of 3) append the entry to their own local WALs does the Leader consider the transaction committed.
+- If the Leader dies, the Followers hold an election. The node with the most up-to-date WAL becomes the new Leader, inheriting the un-aborted pending transactions seamlessly.
+
+### 3. Network Partitions: Split-Brain Protections (CP over AP)
+According to the CAP Theorem, a distributed system can only provide two of three guarantees: Consistency, Availability, and Partition Tolerance.
+
+The DCSE explicitly chooses **Consistency and Partition Tolerance (CP)**. 
+- **The Split-Brain Scenario**: If a network partition occurs and the Coordinator cannot reach Ledger B, the system does not try to guess Ledger B's state. 
+- **Failing Closed**: The Coordinator's `prepare` network call will encounter a timeout. Because the 2PC protocol requires unanimous consent, the Coordinator will forcibly transition the trade to `Aborted` and instruct Ledger A to unlock funds.
+- **Result**: Availability drops to zero, but the financial invariant is perfectly preserved. The system will never credit assets on Ledger A if Ledger B is unreachable.
