@@ -133,3 +133,5 @@ Typical output metrics:
 * **Commit**: ~2.6M TPS (Latency: ~380 ns/op)
 * **Credit**: ~4.6M TPS (Latency: ~215 ns/op)
 * **Abort**: ~4.8M TPS (Latency: ~207 ns/op)
+
+License:Proprietary
